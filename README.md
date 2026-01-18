@@ -6,6 +6,8 @@
 
 *May RNGsus bless your rolls* ✨
 
+<img src="assets/absolute_macro.png" alt="THE ABSOLUTE MACRO" width="400"/>
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![.NET](https://img.shields.io/badge/.NET-8.0-purple)
