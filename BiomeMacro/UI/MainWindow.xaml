@@ -1,0 +1,1535 @@
+    <Window x:Class="BiomeMacro.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BiomeMacro.UI"
+        Title="RNGsus - Sol's RNG Multi-Instance Tracker" 
+        Height="750" Width="1050"
+        MinHeight="650" MinWidth="900"
+        Background="{DynamicResource BackgroundBrush}"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        WindowStyle="None"
+        AllowsTransparency="True">
+    
+    <Window.Resources>
+        <!-- DataTemplate for Per-Instance CPU Limiter -->
+        <DataTemplate x:Key="CpuLimiterTemplate">
+            <Border Background="#1AFFFFFF" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header: Name & PID -->
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"/>
+                            <TextBlock Text="{Binding Pid, StringFormat=' (PID: {0})'}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </StackPanel>
+                        
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <TextBlock Text="Auto" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ToggleButton x:Name="AutoLimitToggle" IsChecked="{Binding IsAutoCpuLimited}"
+                                          Style="{DynamicResource RoundedToggleButtonStyle}" Height="20" Width="36"
+                                          Checked="AutoLimitToggle_Checked" Unchecked="AutoLimitToggle_Checked"
+                                          Tag="{Binding Pid}"/>
+                        </StackPanel>
+
+                        <ToggleButton x:Name="CpuLimitToggle" Content="Limit CPU" IsChecked="{Binding IsCpuLimited}"
+                                      Style="{DynamicResource RoundedToggleButtonStyle}"
+                                      Checked="CpuLimitToggle_Checked" Unchecked="CpuLimitToggle_Checked"
+                                      Tag="{Binding Pid}"
+                                      Margin="12,0,0,0"/>
+                    </StackPanel>
+                    </Grid>
+                    
+                    <!-- Slider Control -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <Slider Minimum="10" Maximum="95" Value="{Binding CpuLimitValue}" 
+                                IsEnabled="{Binding IsCpuLimited}"
+                                Style="{DynamicResource ModernSliderStyle}"
+                                VerticalAlignment="Center"
+                                LostMouseCapture="CpuLimitSlider_Changed"
+                                Tag="{Binding Pid}"/>
+                                
+                        <TextBlock Grid.Column="1" Text="{Binding CpuLimitValue, StringFormat='-{0}%'}" 
+                                   Foreground="{DynamicResource AccentBrush}" FontWeight="Bold" 
+                                   MinWidth="40" TextAlignment="Right" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+    
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" CornerRadius="24" GlassFrameThickness="0" ResizeBorderThickness="6"/>
+    </WindowChrome.WindowChrome>
+    
+    <Grid>
+        <!-- Background Layer -->
+        <Grid Panel.ZIndex="-1">
+            <MediaElement x:Name="BackgroundMedia" 
+                          LoadedBehavior="Manual" 
+                          UnloadedBehavior="Stop"
+                          Stretch="UniformToFill"
+                          IsMuted="True"
+                          MediaEnded="BackgroundMedia_MediaEnded"/>
+            <Image x:Name="BackgroundImage" 
+                   Stretch="UniformToFill"/>
+            <!-- Dimming Overlay -->
+            <Border Background="Black" Opacity="0.5" x:Name="BackgroundDimmer"/>
+        </Grid>
+
+        <Border x:Name="RootBorder" CornerRadius="20" Background="{DynamicResource BackgroundBrush}" 
+            BorderThickness="6" MouseLeftButtonDown="Window_MouseDown">
+        <Border.BorderBrush>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <LinearGradientBrush.RelativeTransform>
+                    <RotateTransform x:Name="BorderGradientRotation" CenterX="0.5" CenterY="0.5" Angle="0"/>
+                </LinearGradientBrush.RelativeTransform>
+                <GradientStop Color="White" Offset="0"/>
+                <GradientStop Color="{DynamicResource AccentBlue}" Offset="0.25"/>
+                <GradientStop Color="White" Offset="0.5"/>
+                <GradientStop Color="{DynamicResource AccentBlue}" Offset="0.75"/>
+                <GradientStop Color="White" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.BorderBrush>
+        <Border.Triggers>
+            <EventTrigger RoutedEvent="Loaded">
+                <BeginStoryboard>
+                    <Storyboard RepeatBehavior="Forever">
+                        <DoubleAnimation Storyboard.TargetName="BorderGradientRotation"
+                                         Storyboard.TargetProperty="Angle"
+                                         From="0" To="360" Duration="0:0:2"/>
+                    </Storyboard>
+                </BeginStoryboard>
+            </EventTrigger>
+        </Border.Triggers>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Sidebar -->
+            <Border x:Name="SidebarBorder" Grid.Column="0" Background="{DynamicResource SidebarBrush}" CornerRadius="20,0,0,20">
+                <StackPanel Margin="0,20,0,20">
+                    <!-- Logo -->
+                    <Border Width="44" Height="44" CornerRadius="12" Margin="0,0,0,30"
+                            Background="{DynamicResource BlueGradient}"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="LogoScale" ScaleX="1" ScaleY="1"/>
+                                <RotateTransform x:Name="LogoRotate" Angle="0"/>
+                            </TransformGroup>
+                        </Border.RenderTransform>
+                        <Border.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <!-- Slow breathing scale -->
+                                        <DoubleAnimation Storyboard.TargetName="LogoScale"
+                                                        Storyboard.TargetProperty="ScaleX"
+                                                        From="1" To="1.1" Duration="0:0:3"
+                                                        AutoReverse="True">
+                                            <DoubleAnimation.EasingFunction>
+                                                <SineEase EasingMode="EaseInOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="LogoScale"
+                                                        Storyboard.TargetProperty="ScaleY"
+                                                        From="1" To="1.1" Duration="0:0:3"
+                                                        AutoReverse="True">
+                                            <DoubleAnimation.EasingFunction>
+                                                <SineEase EasingMode="EaseInOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <!-- Gentle rocking rotation -->
+                                        <DoubleAnimation Storyboard.TargetName="LogoRotate"
+                                                        Storyboard.TargetProperty="Angle"
+                                                        From="-5" To="5" Duration="0:0:4"
+                                                        AutoReverse="True">
+                                            <DoubleAnimation.EasingFunction>
+                                                <SineEase EasingMode="EaseInOut"/>
+                                            </DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Border.Triggers>
+                        <TextBlock Text="🎲" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="RNGsus"/>
+                    </Border>
+                    
+                    <!-- Dashboard -->
+                    <Button x:Name="NavDashboard" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Dashboard" Click="NavDashboard_Click" Tag="Dashboard">
+                        <Grid>
+                            <Border x:Name="NavDashboardIndicator" Width="3" Height="24" Background="{DynamicResource AccentBrush}" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="📊" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- Instances -->
+                    <Button x:Name="NavInstances" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Instances" Click="NavInstances_Click" Tag="Instances">
+                        <Grid>
+                            <Border x:Name="NavInstancesIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="🖥️" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- Anti-AFK -->
+                    <Button x:Name="NavAntiAfk" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Anti-AFK" Click="NavAntiAfk_Click" Tag="AntiAfk">
+                        <Grid>
+                            <Border x:Name="NavAntiAfkIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="🎮" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- Optimizations -->
+                    <Button x:Name="NavOptimizations" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Optimizations" Click="NavOptimizations_Click" Tag="Optimizations">
+                        <Grid>
+                            <Border x:Name="NavOptimizationsIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="🚀" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- History -->
+                    <Button x:Name="NavHistory" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="History" Click="NavHistory_Click" Tag="History">
+                        <Grid>
+                            <Border x:Name="NavHistoryIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="📜" FontSize="18"/>
+                        </Grid>
+                    </Button>
+
+                    <!-- Graphs -->
+                    <Button x:Name="NavGraphs" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Graphs" Click="NavGraphs_Click" Tag="Graphs">
+                        <Grid>
+                            <Border x:Name="NavGraphsIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="📈" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- How To Use -->
+                    <Button x:Name="NavHowToUse" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="How To Use" Click="NavHowToUse_Click" Tag="HowToUse">
+                        <Grid>
+                            <Border x:Name="NavHowToUseIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="❓" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- Settings -->
+                    <Button x:Name="NavSettings" Style="{DynamicResource SidebarButton}" Margin="0,0,0,8" 
+                            ToolTip="Settings" Click="NavSettings_Click" Tag="Settings">
+                        <Grid>
+                            <Border x:Name="NavSettingsIndicator" Width="3" Height="24" Background="Transparent" 
+                                    HorizontalAlignment="Left" Margin="-10,0,0,0" CornerRadius="2"/>
+                            <TextBlock Text="⚙️" FontSize="18"/>
+                        </Grid>
+                    </Button>
+                    
+                    <!-- Spacer -->
+                    <Border Height="1" Background="#20FFFFFF" Margin="12,20"/>
+                    
+                    <!-- Start/Stop -->
+                    <Button x:Name="SidebarStartBtn" Style="{DynamicResource SidebarButton}" 
+                            Click="StartStop_Click" ToolTip="Start/Stop Monitoring">
+                        <TextBlock x:Name="StartStopIcon" Text="▶️" FontSize="18"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+            
+            <!-- Main Content Area -->
+            <Grid Grid.Column="1" Margin="24,20,24,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Top Bar -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="PageTitle" Text="Dashboard" FontSize="24" FontWeight="Bold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <Border x:Name="LiveIndicator" Width="10" Height="10" CornerRadius="5" 
+                                    Background="{DynamicResource AccentBrush}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform x:Name="LivePulseScale" ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <Border.Effect>
+                                    <DropShadowEffect x:Name="LiveGlow" Color="{DynamicResource AccentBlue}" BlurRadius="10" Opacity="0.8" ShadowDepth="0"/>
+                                </Border.Effect>
+                                <Border.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <!-- Pulse scale -->
+                                                <DoubleAnimation Storyboard.TargetName="LivePulseScale"
+                                                                Storyboard.TargetProperty="ScaleX"
+                                                                From="1" To="1.3" Duration="0:0:1"
+                                                                AutoReverse="True">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <SineEase EasingMode="EaseInOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <DoubleAnimation Storyboard.TargetName="LivePulseScale"
+                                                                Storyboard.TargetProperty="ScaleY"
+                                                                From="1" To="1.3" Duration="0:0:1"
+                                                                AutoReverse="True">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <SineEase EasingMode="EaseInOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <!-- Glow pulse -->
+                                                <DoubleAnimation Storyboard.TargetName="LiveGlow"
+                                                                Storyboard.TargetProperty="BlurRadius"
+                                                                From="10" To="20" Duration="0:0:1"
+                                                                AutoReverse="True"/>
+                                                <DoubleAnimation Storyboard.TargetName="LiveGlow"
+                                                                Storyboard.TargetProperty="Opacity"
+                                                                From="0.5" To="1" Duration="0:0:1"
+                                                                AutoReverse="True"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Border.Triggers>
+                            </Border>
+                            <TextBlock x:Name="LiveText" Text="LIVE" FontSize="11" FontWeight="Bold"
+                                       Foreground="{DynamicResource AccentBrush}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock x:Name="StatusText" Text="Ready to track biomes"
+                                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                        <ToggleButton x:Name="ThemeToggle" ToolTip="Toggle Light/Dark"
+                                  Style="{DynamicResource ModernToggle}" Checked="ThemeToggle_Checked" Unchecked="ThemeToggle_Checked"
+                                  Margin="0,0,6,0"/>
+                        <Button Content="─" Click="Minimize_Click" Width="36" Height="28"
+                            Background="Transparent" Foreground="{DynamicResource TextSecondaryBrush}"
+                            BorderThickness="0" Cursor="Hand"/>
+                        <Button Content="✕" Click="Close_Click" Width="36" Height="28"
+                            Background="Transparent" Foreground="{DynamicResource TextSecondaryBrush}"
+                            BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                </Grid>
+                
+                <!-- Page Container -->
+                <Grid Grid.Row="1">
+                    
+                    <!-- DASHBOARD PAGE -->
+                    <Grid x:Name="DashboardPage" Visibility="Visible">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="240"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Left: Hero Card -->
+                        <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                            <!-- Wrapper for Floating Animation -->
+                            <Grid RenderTransformOrigin="0.5,0.5" Margin="0,0,0,16">
+                                <Grid.RenderTransform>
+                                    <TranslateTransform x:Name="HeroFloat" Y="0"/>
+                                </Grid.RenderTransform>
+                                <Grid.Triggers>
+                                    <EventTrigger RoutedEvent="Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <!-- Floating up/down -->
+                                                <DoubleAnimation Storyboard.TargetName="HeroFloat"
+                                                                Storyboard.TargetProperty="Y"
+                                                                From="0" To="-6" Duration="0:0:2.5"
+                                                                AutoReverse="True">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <SineEase EasingMode="EaseInOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                                <!-- Breathing glow (targeting the inner border's effect) -->
+                                                <DoubleAnimation Storyboard.TargetName="HeroGlow"
+                                                                Storyboard.TargetProperty="BlurRadius"
+                                                                From="20" To="35" Duration="0:0:3"
+                                                                AutoReverse="True"/>
+                                                <DoubleAnimation Storyboard.TargetName="HeroGlow"
+                                                                Storyboard.TargetProperty="Opacity"
+                                                                From="0.3" To="0.5" Duration="0:0:3"
+                                                                AutoReverse="True"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </Grid.Triggers>
+                                
+                                <!-- Inner Card with Style (keeps ScaleTransform) -->
+                                <Border Style="{DynamicResource HeroCard}" Height="220">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop x:Name="HeroGradient1" Color="#FFF9C4" Offset="0"/>
+                                            <GradientStop x:Name="HeroGradient2" Color="#FFFDE7" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.Effect>
+                                        <DropShadowEffect x:Name="HeroGlow" Color="#FFD700" BlurRadius="20" Opacity="0.3" ShadowDepth="0"/>
+                                    </Border.Effect>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        
+                                        <StackPanel Grid.Row="0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="BigBiomeEmoji" Text="🌍" FontSize="48" Margin="0,0,0,4"/>
+                                            <TextBlock x:Name="BigBiomeName" Text="Normal" FontSize="36" FontWeight="Light"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        </StackPanel>
+                                        
+                                        <StackPanel Grid.Row="1">
+                                            <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                                <Run Text="🎯 "/><Run x:Name="BiomeChanceText" Text="Default spawn"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                            
+                            <!-- Stats -->
+                            <Grid Margin="0,0,0,16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <Border Grid.Column="0" Style="{DynamicResource StatsCard}" Background="{DynamicResource BlueGradient}">
+                                    <StackPanel>
+                                        <TextBlock Text="Instances" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <TextBlock x:Name="InstanceCountLabel" Text="0" FontSize="28" FontWeight="Bold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                                
+                                <Border Grid.Column="2" Style="{DynamicResource StatsCard}" Background="{DynamicResource PurpleGradient}">
+                                    <StackPanel>
+                                        <TextBlock Text="Rares" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        <TextBlock x:Name="RaresFoundLabel" Text="0" FontSize="28" FontWeight="Bold"
+                                                   Foreground="{DynamicResource AccentPinkBrush}"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                            
+                            <Button x:Name="StartStopBtn" Content="▶  Start Monitoring" 
+                                    Click="StartStop_Click" Style="{DynamicResource PrimaryButton}"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,12"/>
+                                    
+                            <!-- Align Windows Button -->
+                            <Button x:Name="AlignWindowsBtn" Style="{DynamicResource SecondaryButton}" 
+                                    Click="AlignWindows_Click" HorizontalAlignment="Stretch"
+                                    ToolTip="Arranges all Roblox windows in a borderless grid">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🔲" Margin="0,0,8,0"/>
+                                    <TextBlock Text="Align Windows"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        
+                        <!-- Right: Instance Grid -->
+                        <Grid Grid.Column="1">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <TextBlock Grid.Row="0" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
+                                       Foreground="{DynamicResource TextPrimaryBrush}">
+                                <Run Text="Active Instances "/><Run x:Name="InstanceCountText" Text="(0)" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            </TextBlock>
+                            
+                            <!-- Empty State -->
+                            <Border x:Name="NoInstancesPanel" Grid.Row="1" CornerRadius="16" 
+                                    Background="#08000000" Padding="40" Visibility="Visible">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="🔍" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                                    <TextBlock Text="No Roblox instances detected" FontSize="14" FontWeight="Medium"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Launch Roblox and click Start" FontSize="11"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                            
+                            <!-- Compact Instance Grid (2 columns) -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="InstanceList">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <!-- Modern Glass Card inspired by reference -->
+                                            <Border Width="260" Height="180" Margin="0,0,14,14" CornerRadius="24" 
+                                                    ClipToBounds="True" Cursor="Hand"
+                                                    RenderTransformOrigin="0.5,0.5">
+                                                <Border.Effect>
+                                                    <DropShadowEffect Color="Black" BlurRadius="30" Opacity="0.5" ShadowDepth="4"/>
+                                                </Border.Effect>
+                                                <Border.RenderTransform>
+                                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                                </Border.RenderTransform>
+                                                <Border.Triggers>
+                                                    <EventTrigger RoutedEvent="MouseEnter">
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                                                To="1.04" Duration="0:0:0.25">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                                                To="1.04" Duration="0:0:0.25">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut"/>
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                    <EventTrigger RoutedEvent="MouseLeave">
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX"
+                                                                                To="1.0" Duration="0:0:0.25"/>
+                                                                <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY"
+                                                                                To="1.0" Duration="0:0:0.25"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Border.Triggers>
+                                                
+                                                <Grid>
+                                                    <!-- Background: Biome Color Gradient -->
+                                                    <Border CornerRadius="24">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                <GradientStop Color="{Binding BiomeColor}" Offset="0"/>
+                                                                <GradientStop Color="#1A1A24" Offset="0.6"/>
+                                                                <GradientStop Color="#12121A" Offset="1"/>
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                    </Border>
+                                                    
+                                                    <!-- Glassmorphism Overlay -->
+                                                    <Border CornerRadius="24" Opacity="0.15">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                                <GradientStop Color="White" Offset="0"/>
+                                                                <GradientStop Color="Transparent" Offset="0.5"/>
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                    </Border>
+                                                    
+                                                    <!-- Content Layout -->
+                                                    <Grid Margin="20,16,20,16">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="*"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        
+                                                        <!-- Top Row: Avatar + Username -->
+                                                        <Grid Grid.Row="0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            
+                                                            <!-- Avatar with border -->
+                                                            <Border Grid.Column="0" Width="48" Height="48" CornerRadius="24" 
+                                                                    BorderThickness="3" Margin="0,0,12,0" ClipToBounds="True">
+                                                                <Border.BorderBrush>
+                                                                    <SolidColorBrush Color="White" Opacity="0.9"/>
+                                                                </Border.BorderBrush>
+                                                                <Border.Effect>
+                                                                    <DropShadowEffect Color="Black" BlurRadius="10" Opacity="0.4" ShadowDepth="2"/>
+                                                                </Border.Effect>
+                                                                <Grid>
+                                                                    <Ellipse Width="42" Height="42">
+                                                                        <Ellipse.Fill>
+                                                                            <SolidColorBrush Color="{Binding BiomeColor}" Opacity="0.5"/>
+                                                                        </Ellipse.Fill>
+                                                                    </Ellipse>
+                                                                    <Ellipse Width="42" Height="42"
+                                                                             Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}">
+                                                                        <Ellipse.Fill>
+                                                                            <ImageBrush ImageSource="{Binding AvatarImage}" Stretch="UniformToFill"/>
+                                                                        </Ellipse.Fill>
+                                                                    </Ellipse>
+                                                                </Grid>
+                                                            </Border>
+                                                            
+                                                            <!-- Username -->
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="16"
+                                                                           Foreground="White" TextTrimming="CharacterEllipsis">
+                                                                    <TextBlock.Effect>
+                                                                        <DropShadowEffect Color="Black" BlurRadius="6" Opacity="0.5" ShadowDepth="1"/>
+                                                                    </TextBlock.Effect>
+                                                                </TextBlock>
+                                                                <!-- Aura if present -->
+                                                                <TextBlock FontSize="12" Foreground="#FFB6C1" Margin="0,2,0,0"
+                                                                           Visibility="{Binding HasAura, Converter={StaticResource BoolToVisibility}}">
+                                                                    <Run Text="✨ "/><Run Text="{Binding CurrentAura, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        
+                                                        <!-- Middle: Biome Name (Large) -->
+                                                        <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,8,0,0">
+                                                            <TextBlock Text="{Binding CurrentBiome}" FontSize="28" FontWeight="Light"
+                                                                       Foreground="White" TextTrimming="CharacterEllipsis">
+                                                                <TextBlock.Effect>
+                                                                    <DropShadowEffect Color="Black" BlurRadius="8" Opacity="0.6" ShadowDepth="2"/>
+                                                                </TextBlock.Effect>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        
+                                                        <!-- Bottom Row: Tags/Badges -->
+                                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                                            <!-- Biome Tag -->
+                                                            <Border CornerRadius="12" Padding="10,5" Margin="0,0,8,0"
+                                                                    Background="#40000000">
+                                                                <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="White">
+                                                                    <Run Text="🌍 "/>
+                                                                    <Run Text="{Binding CurrentBiome, Mode=OneWay}"/>
+                                                                </TextBlock>
+                                                            </Border>
+
+                                                            <!-- Mari Merchant Badge -->
+                                                            <Border CornerRadius="12" Padding="10,5" Margin="0,0,8,0"
+                                                                    Visibility="{Binding HasMerchant, Converter={StaticResource BoolToVisibility}}">
+                                                                <Border.Background>
+                                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                        <GradientStop Color="#FFFFFF" Offset="0"/>
+                                                                        <GradientStop Color="#FFB6C1" Offset="1"/>
+                                                                    </LinearGradientBrush>
+                                                                </Border.Background>
+                                                                <TextBlock Text="🛒 MARI" FontSize="10" FontWeight="Bold" Foreground="#1a1a24"/>
+                                                            </Border>
+
+                                                            <!-- Jester Badge -->
+                                                            <Border CornerRadius="12" Padding="10,5"
+                                                                    Visibility="{Binding HasJester, Converter={StaticResource BoolToVisibility}}">
+                                                                <Border.Background>
+                                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                        <GradientStop Color="#9B59B6" Offset="0"/>
+                                                                        <GradientStop Color="#8E44AD" Offset="1"/>
+                                                                    </LinearGradientBrush>
+                                                                </Border.Background>
+                                                                <TextBlock Text="🃏 JESTER" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+
+                        <!-- Column 2: Recent History -->
+                        <Grid Grid.Column="2" Margin="20,0,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="RECENT HISTORY" FontSize="11" FontWeight="Bold" 
+                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                <Button x:Name="ClearHistoryDashBtn" Content="Clear" Style="{DynamicResource SecondaryButton}" 
+                                        Padding="8,2" Margin="12,0,0,0" Click="ClearHistory_Click" FontSize="9"/>
+                            </StackPanel>
+
+                            <Border Grid.Row="1" CornerRadius="16" Background="#05000000" Padding="4">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="RecentHistoryList" ItemsSource="{Binding BiomeHistory, RelativeSource={RelativeSource AncestorType=Window}}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource CardBrush}" CornerRadius="10" Padding="10,8" Margin="0,0,0,6">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect Color="Black" BlurRadius="4" Opacity="0.1" ShadowDepth="1"/>
+                                                    </Border.Effect>
+                                                    <StackPanel>
+                                                        <Grid>
+                                                            <TextBlock Text="{Binding BiomeName}" FontWeight="Bold" FontSize="12">
+                                                                <TextBlock.Foreground>
+                                                                    <SolidColorBrush Color="{Binding BiomeColor}"/>
+                                                                </TextBlock.Foreground>
+                                                            </TextBlock>
+                                                            <TextBlock Text="{Binding DetectedAt, StringFormat=HH:mm:ss}" 
+                                                                       FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                        <TextBlock Text="{Binding InstanceName}" FontSize="10" 
+                                                                   Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,2,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                    
+                    <!-- INSTANCES PAGE -->
+                    <Grid x:Name="InstancesPage" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <TextBlock Grid.Row="0" Text="All Active Instances" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,16"/>
+                        
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="InstanceListFull">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{DynamicResource InstanceCard}">
+                                            <Border.BorderBrush>
+                                                <SolidColorBrush Color="{Binding BiomeColor}" Opacity="0.4"/>
+                                            </Border.BorderBrush>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                
+                                                <Border Grid.Column="0" Width="52" Height="52" CornerRadius="26"
+                                                        Margin="0,0,16,0" ClipToBounds="True">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect Color="{Binding BiomeColor}" BlurRadius="15" Opacity="0.5" ShadowDepth="0"/>
+                                                    </Border.Effect>
+                                                    <Grid>
+                                                        <Ellipse Width="52" Height="52">
+                                                            <Ellipse.Fill>
+                                                                <SolidColorBrush Color="{Binding BiomeColor}" Opacity="0.25"/>
+                                                            </Ellipse.Fill>
+                                                        </Ellipse>
+                                                        <Ellipse Width="52" Height="52"
+                                                                 Visibility="{Binding HasAvatar, Converter={StaticResource BoolToVisibility}}">
+                                                            <Ellipse.Fill>
+                                                                <ImageBrush ImageSource="{Binding AvatarImage}" Stretch="UniformToFill"/>
+                                                            </Ellipse.Fill>
+                                                        </Ellipse>
+                                                        <Ellipse Width="52" Height="52">
+                                                            <Ellipse.Fill>
+                                                                <SolidColorBrush Color="{Binding BiomeColor}" Opacity="0.3"/>
+                                                            </Ellipse.Fill>
+                                                        </Ellipse>
+                                                        <Ellipse Width="52" Height="52" StrokeThickness="2">
+                                                            <Ellipse.Stroke>
+                                                                <SolidColorBrush Color="{Binding BiomeColor}"/>
+                                                            </Ellipse.Stroke>
+                                                        </Ellipse>
+                                                    </Grid>
+                                                </Border>
+                                                
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="15"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                        <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                                            <Run Text="PID: "/><Run Text="{Binding Pid, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <TextBlock Text=" • " FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                   Visibility="{Binding HasAura, Converter={StaticResource BoolToVisibility}}"/>
+                                                        <TextBlock FontSize="12" Foreground="#F48FB1"
+                                                                   Visibility="{Binding HasAura, Converter={StaticResource BoolToVisibility}}">
+                                                            <Run Text="✨ "/><Run Text="{Binding CurrentAura, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                        <!-- Merchant Badge -->
+                                                        <Border CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                                                                Background="#FFD700" 
+                                                                Visibility="{Binding HasMerchant, Converter={StaticResource BoolToVisibility}}">
+                                                            <TextBlock Text="🛒 MERCHANT" FontSize="9" FontWeight="Bold" Foreground="#1a1a24"/>
+                                                        </Border>
+                                                        <!-- Jester Badge -->
+                                                        <Border CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                                                                Background="#9B59B6" 
+                                                                Visibility="{Binding HasJester, Converter={StaticResource BoolToVisibility}}">
+                                                            <TextBlock Text="🃏 JESTER" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                
+                                                <Border Grid.Column="2" CornerRadius="10" Padding="14,8" VerticalAlignment="Center">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="{Binding BiomeColor}" Opacity="0.2"/>
+                                                    </Border.Background>
+                                                    <TextBlock Text="{Binding CurrentBiome}" FontWeight="SemiBold" FontSize="13">
+                                                        <TextBlock.Foreground>
+                                                            <SolidColorBrush Color="{Binding BiomeColor}"/>
+                                                        </TextBlock.Foreground>
+                                                    </TextBlock>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                    
+                    <!-- HISTORY PAGE -->
+                    <Grid x:Name="HistoryPage" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+                            <TextBlock Text="Biome History" FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"/>
+                            <TextBlock x:Name="HistoryCountText" Text=" (0)" FontSize="16"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                            <Button Content="Clear" Style="{DynamicResource SecondaryButton}" Padding="12,6"
+                                    Margin="20,0,0,0" Click="ClearHistory_Click" FontSize="11"/>
+                        </StackPanel>
+                        
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="HistoryList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#08000000" CornerRadius="12" Padding="14,10" Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}">
+                                                        <Run Text="{Binding InstanceName, Mode=OneWay}" FontWeight="Medium"/>
+                                                        <Run Text=" → " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                        <Run Text="{Binding BiomeName, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding SpawnChance}" FontSize="11" 
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                                </StackPanel>
+                                                
+                                                <TextBlock Grid.Column="1" Text="{Binding DetectedAt, StringFormat=HH:mm:ss}"
+                                                           FontSize="11" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- GRAPHS PAGE -->
+                    <local:GraphView x:Name="GraphsPage" Visibility="Collapsed"/>
+                    
+                    <!-- ANTI-AFK PAGE -->
+                    <Grid x:Name="AntiAfkPage" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Header / Status -->
+                        <Border Grid.Row="0" Margin="0,0,0,24" CornerRadius="16" Background="#08000000" Padding="24">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <TextBlock Text="Anti-AFK Control" FontSize="18" FontWeight="Bold"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <Border x:Name="AntiAfkStatusBadge" CornerRadius="6" Background="{DynamicResource SuccessBrush}" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="AntiAfkStatusText" Text="ACTIVE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock x:Name="AntiAfkLastActionText" Text="Last action: --" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                                
+                                <ToggleButton x:Name="AntiAfkMainToggle" Grid.Column="1" Width="60" Height="32"
+                                              Style="{DynamicResource ModernToggle}" Click="AntiAfkToggle_Click"/>
+                            </Grid>
+                        </Border>
+                        
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <StackPanel MaxWidth="800" HorizontalAlignment="Left">
+                                
+                                <!-- ViGEmBus Driver Section -->
+                                <TextBlock Text="VIRTUAL GAMEPAD DRIVER (VIGEMBUS)" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="4,0,0,8"/>
+                                <Border CornerRadius="12" Padding="20" Margin="0,0,0,24">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#4A148C" Offset="0"/>
+                                            <GradientStop Color="#311B92" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <TextBlock Text="Focus-Free Mode" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                                                <Border x:Name="VigemStatusBadge" CornerRadius="6" Background="#F44336" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="VigemStatusText" Text="NOT INSTALLED" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#CCFFFFFF" Margin="0,0,20,0">
+                                                <Run>ViGEmBus creates a virtual Xbox controller to send inputs without focusing windows.</Run>
+                                                <LineBreak/>
+                                                <Run FontWeight="Bold" Foreground="#FFD700">This is the ONLY Anti-AFK that works without window focus!</Run>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Button x:Name="InstallVigemBtn" Grid.Column="1" Height="44" Click="InstallVigem_Click"
+                                                VerticalAlignment="Center" Padding="20,0">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+                                                    <Setter Property="Background">
+                                                        <Setter.Value>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                                <GradientStop Color="#4CAF50" Offset="0"/>
+                                                                <GradientStop Color="#388E3C" Offset="1"/>
+                                                            </LinearGradientBrush>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </Button.Style>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="⬇️" Margin="0,0,8,0"/>
+                                                <TextBlock x:Name="VigemBtnText" Text="Install ViGEmBus"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                                
+                                <!-- Actions Group -->
+                                <TextBlock Text="ACTIONS" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="4,0,0,8"/>
+                                <Border CornerRadius="12" Background="#05000000" Padding="20" Margin="0,0,0,24">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <!-- Jump -->
+                                        <CheckBox x:Name="CheckJump" Grid.Column="0" Content="Jump" IsChecked="True" 
+                                                  Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"
+                                                  Checked="Action_Checked" Unchecked="Action_Checked"/>
+                                                  
+                                        <!-- Walk -->
+                                        <CheckBox x:Name="CheckWalk" Grid.Column="1" Content="Walk Around" IsChecked="False"
+                                                  Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"
+                                                  Checked="Action_Checked" Unchecked="Action_Checked"
+                                                  ToolTip="Simulates WASD movement"/>
+                                                  
+                                        <!-- Spin -->
+                                        <CheckBox x:Name="CheckSpin" Grid.Column="2" Content="Camera Spin" IsChecked="False"
+                                                  Foreground="{DynamicResource TextPrimaryBrush}" FontSize="14"
+                                                  Checked="Action_Checked" Unchecked="Action_Checked"
+                                                  ToolTip="Random camera rotation"/>
+                                    </Grid>
+                                </Border>
+                                
+                                <!-- Randomization Group -->
+                                <TextBlock Text="TIMING &amp; RANDOMIZATION" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="4,0,0,8"/>
+                                <Border CornerRadius="12" Background="#05000000" Padding="20" Margin="0,0,0,24">
+                                    <StackPanel>
+                                        <TextBlock Text="Interval Range (Seconds)" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,12"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="10"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <StackPanel>
+                                                <TextBlock Text="Min" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,2"/>
+                                                <TextBox x:Name="MinIntervalBox" Width="70" Text="10" 
+                                                         Style="{DynamicResource ModernTextBox}" Padding="8,8"
+                                                         LostFocus="Interval_LostFocus"/>
+                                            </StackPanel>
+                                            
+                                            <TextBlock Grid.Column="1" Text="-" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,16,0,0"/>
+                                            
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="Max" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,2"/>
+                                                <TextBox x:Name="MaxIntervalBox" Width="70" Text="60" 
+                                                         Style="{DynamicResource ModernTextBox}" Padding="8,8"
+                                                         LostFocus="Interval_LostFocus"/>
+                                            </StackPanel>
+                                            
+                                            <TextBlock Grid.Column="3" Text="Actions will occur randomly within this timeframe." 
+                                                       VerticalAlignment="Center" Margin="16,14,0,0" 
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                
+                                <!-- Window Management Group -->
+                                <TextBlock Text="WINDOW MANAGEMENT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="4,0,0,8"/>
+                                <Border CornerRadius="12" Background="#05000000" Padding="20" Margin="0,0,0,24">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="16"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <Button x:Name="BtnAlignWindows" Grid.Column="0" Height="44" Style="{DynamicResource SecondaryButton}" 
+                                                    Click="AlignWindows_Click" ToolTip="Arrange all windows in a grid">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="🔲" Margin="0,0,8,0"/>
+                                                    <TextBlock Text="Align Windows"/>
+                                                </StackPanel>
+                                            </Button>
+                                            
+                                            <Button x:Name="BtnGhostMode" Grid.Column="2" Height="44" Style="{DynamicResource SecondaryButton}"
+                                                    Click="ToggleGhostMode_Click" ToolTip="Hide/Show all Roblox windows">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="👻" Margin="0,0,8,0"/>
+                                                    <TextBlock x:Name="GhostModeText" Text="Ghost Mode (Hide)"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                        <TextBlock Text="Ghost Mode hides windows from the taskbar and screen to save resources/space." 
+                                                   FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                </Border>
+
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                    
+                    <!-- SETTINGS PAGE -->
+                    <Grid x:Name="SettingsPage" Visibility="Collapsed">
+                        <StackPanel MaxWidth="600">
+                            <TextBlock Text="Settings" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,10"/>
+                            
+                            <Border CornerRadius="12" Background="#08000000" Padding="14" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="🔔 Discord Webhook" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,2"/>
+                                    <TextBlock Text="Get notified when rare biomes are detected" FontSize="10"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="WebhookUrlBox" Style="{DynamicResource ModernTextBox}" Margin="0,0,10,0"/>
+                                        <Button x:Name="TestWebhookBtn" Grid.Column="1" Content="Test"
+                                                Style="{DynamicResource SecondaryButton}" Padding="20,12" Click="TestWebhook_Click"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                            
+                            <Border CornerRadius="12" Background="#08000000" Padding="14" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock Text="🔒 Smart Alert System" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,2"/>
+                                    <TextBlock Text="Get notified when rare events occur" FontSize="10"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10"/>
+                                    
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Audio Notifications" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Play system sound on rare find" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <ToggleButton x:Name="AudioAlertToggle" Grid.Column="1" Style="{DynamicResource ModernToggle}"
+                                                      IsChecked="True" Checked="Alert_Checked" Unchecked="Alert_Checked"/>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Visual Flash" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Flash taskbar icon on rare find" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <ToggleButton x:Name="FlashAlertToggle" Grid.Column="1" Style="{DynamicResource ModernToggle}"
+                                                      IsChecked="True" Checked="Alert_Checked" Unchecked="Alert_Checked"/>
+                                    </Grid>
+
+                                    <Separator Background="{DynamicResource BorderBrush}" Margin="0,2,0,8"/>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="NPC Alerts" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="Notify for Mari/Jester regardless of rarity" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <ToggleButton x:Name="NpcAlertToggle" Grid.Column="1" Style="{DynamicResource ModernToggle}"
+                                                      IsChecked="True" Checked="Alert_Checked" Unchecked="Alert_Checked"/>
+                                    </Grid>
+
+                                    <StackPanel Margin="0,2,0,0">
+                                        <Grid>
+                                            <TextBlock Text="Minimum Rarity Threshold" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            <TextBlock x:Name="RarityThresholdLabel" Text="Rarity 5+" FontSize="11" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="RarityThresholdSlider" Minimum="1" Maximum="10" Value="5" 
+                                                Margin="0,4,0,0" Style="{DynamicResource ModernSliderStyle}"
+                                                ValueChanged="RarityThresholdSlider_ValueChanged"/>
+                                        <TextBlock Text="1: Normal | 5: Starfall | 7: Corrupt | 10: Glitch" FontSize="9" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Dynamic Biome Theme + Custom Background -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="14" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="🎨 Dynamic Biome Theme" FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,2"/>
+                                            <TextBlock Text="UI colors change to match the current biome" FontSize="10"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                        <ToggleButton x:Name="DynamicThemeToggle" Grid.Column="1" 
+                                                      Style="{DynamicResource ModernToggle}"
+                                                      Checked="DynamicThemeToggle_Checked" Unchecked="DynamicThemeToggle_Checked"/>
+                                    </Grid>
+                                    
+                                    <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,8"/>
+
+                                    <!-- Custom Background Section -->
+                                    <TextBlock Text="🖼️ Custom Background" FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,6"/>
+                                    
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Content="Choose File..." Click="SelectBackground_Click"
+                                                Style="{DynamicResource ModernButtonStyle}" Grid.Column="0"/>
+                                        <Button Content="Reset" Click="ResetBackground_Click"
+                                                Style="{DynamicResource SecondaryButton}" Grid.Column="2"/>
+                                    </Grid>
+
+                                    <Grid>
+                                        <TextBlock Text="Opacity" FontSize="11" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <TextBlock x:Name="BgOpacityText" Text="50%" FontSize="11" 
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                    <Slider x:Name="BgOpacitySlider" Minimum="0" Maximum="1" Value="0.5" 
+                                            Margin="0,4,0,0" Style="{DynamicResource ModernSliderStyle}"
+                                            ValueChanged="BgOpacitySlider_ValueChanged"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                    
+                </Grid>
+                
+                <!-- How To Use Page -->
+                <Grid x:Name="HowToUsePage" Grid.Row="1" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                        <StackPanel MaxWidth="700">
+                            
+                            <!-- Header -->
+                            <Border CornerRadius="16" Margin="0,0,0,16" Padding="20">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#2196F3" Offset="0"/>
+                                        <GradientStop Color="#1976D2" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <StackPanel>
+                                    <TextBlock Text="RNGsus v1.0" FontSize="24" FontWeight="Bold" Foreground="White"/>
+                                    <TextBlock Text="Multi-instance Sol's RNG biome tracker with NPC detection, Discord webhooks, Anti-AFK, and system optimizations."
+                                               FontSize="13" Foreground="#CCFFFFFF" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Dashboard -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="📊 Dashboard" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>The main overview showing your current biome, active instances, and detection stats.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Hero Panel:</Run><Run> Shows the current/last detected biome with animated colors</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Active Instances:</Run><Run> Cards showing each Roblox instance with biome, aura, and NPC badges</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Stats:</Run><Run> Instance count and rare biomes found this session</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Instance Cards -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🖥️ Instance Cards" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>Each detected Roblox instance gets its own card showing:</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Avatar:</Run><Run> Your Roblox avatar (fetched automatically from username)</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Current Biome:</Run><Run> Color-coded with animated transitions</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Equipped Aura:</Run><Run> Shows when you have an aura equipped</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• NPC Badges:</Run><Run> 🛒 MARI and 🃏 JESTER badges appear when merchants are detected in-game</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- NPC Detection -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🛒 Merchant &amp; Jester Detection" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>Automatically detects when Mari (Traveling Merchant) or Jester NPCs spawn by parsing game logs.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Detection:</Run><Run> Reads "[Merchant]: Mari/Jester has arrived on the island" from logs</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• Alerts:</Run><Run> Audio/visual alerts + Discord webhook notifications</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">• UI Badge:</Run><Run> Instance card shows merchant badge when detected</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Anti-AFK (Focus-Free) -->
+                            <Border CornerRadius="12" Padding="16" Margin="0,0,0,12">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#4A148C" Offset="0"/>
+                                        <GradientStop Color="#311B92" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="🎮 Anti-AFK" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+                                        <Border Background="#4CAF50" CornerRadius="8" Padding="8,2" Margin="10,0,0,0">
+                                            <TextBlock Text="NO FOCUS REQUIRED" FontSize="9" FontWeight="Bold" Foreground="White"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#DDDDDD">
+                                        <Run FontWeight="Bold" Foreground="#FFD700">The ONLY Anti-AFK that works without window focus!</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run>Unlike other Anti-AFK tools that require the Roblox window to be focused, RNGsus uses a </Run>
+                                        <Run FontWeight="Bold" Foreground="White">Virtual Gamepad Driver (ViGEmBus)</Run>
+                                        <Run> to spoof controller inputs directly to Roblox processes. This means you can keep all your Roblox instances running in the background while using your computer normally.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="White">How It Works:</Run>
+                                        <LineBreak/>
+                                        <Run>• ViGEmBus creates a virtual Xbox 360 controller that Windows recognizes as real hardware</Run>
+                                        <LineBreak/>
+                                        <Run>• Controller inputs are sent directly to each Roblox process via their window handle</Run>
+                                        <LineBreak/>
+                                        <Run>• No need to alt-tab or focus windows - works completely in the background</Run>
+                                        <LineBreak/>
+                                        <Run>• Roblox sees legitimate gamepad input, so it won't flag you for automation</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="White">Available Actions:</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Jump:</Run><Run> Simulates pressing the A button (spacebar equivalent) to make your character jump</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Walk:</Run><Run> Small left stick movements to walk your character slightly, preventing idle detection</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Spin:</Run><Run> Right stick rotation to move your camera, simulating active gameplay</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Interval:</Run><Run> Set the time (in seconds) between actions. Random timing within this window makes inputs look natural</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="White">Requirements:</Run>
+                                        <LineBreak/>
+                                        <Run>• ViGEmBus driver must be installed (one-click install button in Anti-AFK page)</Run>
+                                        <LineBreak/>
+                                        <Run>• Works on Windows 10/11 x64</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Discord Webhooks -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🔔 Discord Webhooks" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>Get real-time notifications on Discord when important events happen. Never miss a rare biome or merchant spawn, even when you're away from your PC.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">Setup:</Run>
+                                        <LineBreak/>
+                                        <Run>1. Create a webhook in your Discord server (Server Settings → Integrations → Webhooks)</Run>
+                                        <LineBreak/>
+                                        <Run>2. Copy the webhook URL and paste it in Settings</Run>
+                                        <LineBreak/>
+                                        <Run>3. Click "Test" to verify it works</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">What Gets Notified:</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Rare Biomes:</Run><Run> Starfall, Dreamspace, Glitched and other rare biomes based on your rarity threshold</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Merchant Spawns:</Run><Run> When Mari or Jester appear on your server</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Aura Equips:</Run><Run> When you equip a rare aura</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Screenshots:</Run><Run> Each notification includes a screenshot of the game at detection time</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Biome Detection -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🌍 Biome Detection" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>Automatically detects the current biome for each Roblox instance by parsing game logs.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">How It Works:</Run>
+                                        <LineBreak/>
+                                        <Run>• Reads Bloxstrap RPC messages from Roblox log files in real-time</Run>
+                                        <LineBreak/>
+                                        <Run>• Parses the "largeImage.hoverText" field from SetRichPresence commands</Run>
+                                        <LineBreak/>
+                                        <Run>• Updates UI instantly when biome changes</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">Supported Biomes:</Run>
+                                        <LineBreak/>
+                                        <Run>Normal, Windy, Rainy, Snowy, Starfall, Corruption, Hell, Dreamspace, Glitched, Null, etc.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}">Requirements:</Run>
+                                        <LineBreak/>
+                                        <Run>• FFlags must be configured in Bloxstrap for RPC to work</Run>
+                                        <LineBreak/>
+                                        <Run>• Log files are located in %LOCALAPPDATA%\Roblox\logs</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Optimizations -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🚀 System Optimizations" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run>Running multiple Roblox instances can consume significant system resources. These tools help reduce memory and CPU usage.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Memory Trim:</Run>
+                                        <LineBreak/>
+                                        <Run>  Calls EmptyWorkingSet() on each Roblox process to release unused RAM back to the system. Safe to use frequently. Auto-clean mode triggers this automatically when RAM usage exceeds your threshold.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Efficiency Mode (Low Priority):</Run>
+                                        <LineBreak/>
+                                        <Run>  Sets Roblox process priority to "BelowNormal", giving other applications more CPU time. Completely safe and effective for background farming.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#FF9800">• CPU Limiter (BES):</Run>
+                                        <LineBreak/>
+                                        <Run>  Uses the BES (Battle Encoder Shirase) technique to hard-limit CPU usage per instance. Set a percentage (e.g., -50%) to cap how much CPU each instance can use. </Run>
+                                        <Run FontWeight="Bold" Foreground="#FF5722">Warning: High reduction (>80%) may cause disconnects!</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Ghost Mode:</Run>
+                                        <LineBreak/>
+                                        <Run>  Hides all Roblox windows from the taskbar and screen while keeping them running. Useful for saving desktop space and GPU resources (minimized windows use less VRAM).</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Window Management -->
+                            <Border CornerRadius="12" Background="#08000000" Padding="16" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock Text="🔲 Window Management" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Align Windows:</Run>
+                                        <LineBreak/>
+                                        <Run>  Automatically arranges all Roblox windows into a grid layout on your screen. Useful for monitoring multiple instances at once. Grid size adjusts based on the number of instances.</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontWeight="SemiBold" Foreground="#4FC3F7">• Ghost Mode:</Run>
+                                        <LineBreak/>
+                                        <Run>  Completely hides all Roblox windows but keeps them running in the background. Click again to restore them. The windows continue to render and process inputs normally.</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Tips -->
+                            <Border CornerRadius="12" Padding="16" Margin="0,0,0,20">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#1a5f3a" Offset="0"/>
+                                        <GradientStop Color="#0d3d24" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <StackPanel>
+                                    <TextBlock Text="💡 Quick Start Tips" FontSize="14" FontWeight="SemiBold" Foreground="#4CAF50" Margin="0,0,0,8"/>
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="#CCFFFFFF">
+                                        <Run FontWeight="SemiBold">1.</Run><Run> Install ViGEmBus driver from the Anti-AFK page for focus-free operation</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold">2.</Run><Run> Click ▶️ in the sidebar to start monitoring your Roblox instances</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold">3.</Run><Run> Set up Discord webhook in Settings to get notifications on your phone</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold">4.</Run><Run> Enable Anti-AFK to keep all instances from disconnecting</Run>
+                                        <LineBreak/>
+                                        <Run FontWeight="SemiBold">5.</Run><Run> Use Ghost Mode to hide windows and save desktop space</Run>
+                                        <LineBreak/><LineBreak/>
+                                        <Run FontStyle="Italic" Foreground="#88FFFFFF">Biome detection requires Bloxstrap with FFlags configured for RPC logging.</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- Optimizations Page -->
+                <Grid x:Name="OptimizationsPage" Grid.Row="1" Visibility="Collapsed" Margin="24" Background="{DynamicResource BackgroundBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Header -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,24">
+                        <TextBlock Text="🚀" FontSize="24" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock Text="System Optimizations" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <!-- Global Tools -->
+                    <Grid Grid.Row="1" Margin="0,0,0,24">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="24"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Memory -->
+                        <Border Grid.Column="0" Background="{DynamicResource CardBrush}" CornerRadius="16" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="MEMORY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                <TextBlock Text="Reduce RAM Usage" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="Trims working set for all Roblox instances." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                                
+                                <Button x:Name="OptimizeMemoryBtn" Content="Trim Memory Now" Click="OptimizeMemory_Click"
+                                        Style="{DynamicResource ModernButtonStyle}" Margin="0,0,0,16"/>
+                                        
+                                <Separator Background="{DynamicResource BorderBrush}" Margin="0,0,0,16"/>
+                                
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Auto Clean" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                        <TextBlock x:Name="MemoryThresholdText" Text="Trigger at 80% RAM" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleButton x:Name="AutoCleanToggle" Grid.Column="1" 
+                                                  Style="{DynamicResource RoundedToggleButtonStyle}"
+                                                  Checked="AutoCleanToggle_Checked" Unchecked="AutoCleanToggle_Checked"/>
+                                </Grid>
+                                
+                                <Slider x:Name="MemoryThresholdSlider" Minimum="40" Maximum="95" Value="80" 
+                                        Margin="0,12,0,0" Style="{DynamicResource ModernSliderStyle}"
+                                        ValueChanged="MemoryThresholdSlider_ValueChanged"
+                                        IsEnabled="{Binding ElementName=AutoCleanToggle, Path=IsChecked}"/>
+                            </StackPanel>
+                        </Border>
+                        
+                        <!-- Efficiency Mode -->
+                        <Border Grid.Column="2" Background="{DynamicResource CardBrush}" CornerRadius="16" Padding="20">
+                            <StackPanel>
+                                <TextBlock Text="PROCESS PRIORITY" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12"/>
+                                <Grid Margin="0,0,0,8">
+                                    <TextBlock Text="Efficiency Mode" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="EfficiencyModeToggle" HorizontalAlignment="Right" Click="ToggleEfficiencyMode_Click"
+                                                  Style="{DynamicResource IosToggleButtonStyle}"/>
+                                </Grid>
+                                <TextBlock Text="Sets Roblox to Low Priority. Safe &amp; effective." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                    
+                    <!-- Per-Instance Limiter -->
+                    <Border Grid.Row="2" Background="{DynamicResource CardBrush}" CornerRadius="16" Padding="20">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                                <TextBlock Text="HARD CPU LIMITER (BES)" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="Per-Instance Throttling" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                <TextBlock Text="Warning: High reduction (>80%) may cause disconnects." FontSize="12" Foreground="{DynamicResource WarningBrush}" Margin="0,4,0,0"/>
+                            </StackPanel>
+                            
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="CpuLimiterList" ItemTemplate="{DynamicResource CpuLimiterTemplate}"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+    </Grid>
+</Window>
