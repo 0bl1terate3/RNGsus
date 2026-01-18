@@ -2,6 +2,10 @@
 
 <div align="center">
 
+<img src="assets/rng_jesus.png" alt="RNGsus - The God of RNG" width="300"/>
+
+*May RNGsus bless your rolls* ✨
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![.NET](https://img.shields.io/badge/.NET-8.0-purple)
