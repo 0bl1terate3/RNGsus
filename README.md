@@ -53,7 +53,19 @@
 
 ---
 
-## 📥 Installation
+## � Screenshots
+
+<div align="center">
+
+<img src="assets/dashboard_screenshot.png" alt="RNGsus Dashboard" width="800"/>
+
+*Dashboard with live biome tracking and instance management*
+
+</div>
+
+---
+
+## �📥 Installation
 
 ### Requirements
 - Windows 10/11
